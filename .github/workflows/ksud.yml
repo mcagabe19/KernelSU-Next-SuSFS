@@ -13,10 +13,6 @@ on:
         required: false
         type: boolean
         default: true
-      use_cache:
-        required: false
-        type: boolean
-        default: true
 jobs:
   build:
     runs-on: ${{ inputs.os }}
@@ -25,23 +21,23 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Download artifacts
-      uses: actions/download-artifact@v4
-    
+    - name: Download Pre-built LKMs
+      if: ${{ inputs.pack_lkm }}
+      uses: actions/checkout@v4
+      with:
+        ref: lkm
+        path: lkm
+
     - name: Prepare LKM fies
       if: ${{ inputs.pack_lkm }}
       run: |
-        cp android*-lkm/*_kernelsu.ko ./userspace/ksud/bin/aarch64/
-        
+        cp lkm/*_kernelsu.ko ./userspace/ksud/bin/aarch64/
+
     - name: Setup rustup
       run: |
         rustup update stable
         rustup target add x86_64-apple-darwin
         rustup target add aarch64-apple-darwin
-    - uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: userspace/ksud
-        cache-targets: false
 
     - name: Install cross
       run: |

@@ -87,15 +87,6 @@ jobs:
           path: KernelSU-Next
           fetch-depth: 0
 
-      - name: Setup need_upload
-        id: need_upload
-        run: |
-          if [ ! -z "${{ secrets.BOT_TOKEN }}" ]; then
-            echo "UPLOAD=true" >> $GITHUB_OUTPUT
-          else
-            echo "UPLOAD=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Setup kernel source
         run: |
           echo "Free space:"

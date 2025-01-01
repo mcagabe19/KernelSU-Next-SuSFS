@@ -9,44 +9,28 @@ on:
       - 'kernel/**'
       - 'userspace/ksud/**'
       - 'userspace/susfs/**'
-  pull_request:
-    branches: [ "next" ]
-    paths:
-      - 'manager/**'
-  workflow_call:
   workflow_dispatch:
 
 jobs:
-  build-lkm:
-    uses: ./.github/workflows/build-lkm.yml
-    secrets: inherit
-
   build-ksud:
-    needs: build-lkm
     strategy:
       matrix:
         include:
           - target: aarch64-linux-android
+            os: ubuntu-latest
+          - target: x86_64-linux-android
             os: ubuntu-latest
     uses: ./.github/workflows/ksud.yml
     with:
       target: ${{ matrix.target }}
       os: ${{ matrix.os }}
+      pack_lkm: true
 
   build-susfs:
-    needs: build-ksud
-    strategy:
-      matrix:
-        include:
-          - target: aarch64-linux-android
-            os: ubuntu-latest
     uses: ./.github/workflows/build-susfs.yml
-    with:
-      target: ${{ matrix.target }}
-      os: ${{ matrix.os }}
 
   build-manager:
-    needs: build-susfs
+    needs: [build-ksud, build-susfs]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,20 +51,8 @@ jobs:
               echo KEY_PASSWORD='${{ secrets.KEY_PASSWORD }}'
               echo KEYSTORE_FILE='key.jks'
             } >> gradle.properties
-            echo ${{ secrets.KEYSTORE }} | base64 -d > key.jks
+            echo "${{ secrets.KEYSTORE }}" | base64 -d > key.jks
           fi
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
 
       - name: Download arm64 ksud
         uses: actions/download-artifact@v4
@@ -88,30 +60,38 @@ jobs:
           name: ksud-aarch64-linux-android
           path: .
 
-      - name: Download arm64 susfs
+      - name: Download x86_64 ksud
         uses: actions/download-artifact@v4
         with:
-          name: susfs-aarch64-linux-android
+          name: ksud-x86_64-linux-android
           path: .
 
-      - name: Copy ksud to app jniLibs
+      - name: Download susfs
+        uses: actions/download-artifact@v4
+        with:
+          name: susfs-linux-android
+          path: .
+
+      - name: Copy ksud and susfs to app jniLibs
         run: |
           mkdir -p app/src/main/jniLibs/arm64-v8a
+          mkdir -p app/src/main/jniLibs/x86_64
           cp -f ../aarch64-linux-android/release/ksud ../manager/app/src/main/jniLibs/arm64-v8a/libksud.so
-
-      - name: Copy susfs to app jniLibs
-        run: |
+          cp -f ../x86_64-linux-android/release/ksud ../manager/app/src/main/jniLibs/x86_64/libksud.so
           cp -f ../arm64-v8a/susfs ../manager/app/src/main/jniLibs/arm64-v8a/libsusfs.so
+          cp -f ../x86_64/susfs ../manager/app/src/main/jniLibs/x86_64/libsusfs.so
 
       - name: Build with Gradle
         run: |
           {
             echo 'org.gradle.parallel=true'
+            echo 'org.gradle.daemon=false'
+            echo 'org.gradle.caching=false'
             echo 'org.gradle.vfs.watch=true'
             echo 'org.gradle.jvmargs=-Xmx2048m'
             echo 'android.native.buildOutput=verbose'
           } >> gradle.properties
-          sed -i 's/org.gradle.configuration-cache=true//g' gradle.properties
+          export JAVA_HOME=$JAVA_HOME_21_X64
           chmod +x gradlew
           ./gradlew clean assembleRelease
 
@@ -120,6 +100,7 @@ jobs:
         with:
           name: manager
           path: manager/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
 
       - name: Upload mappings
         uses: actions/upload-artifact@v4
